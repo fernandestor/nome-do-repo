@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          pip install pytest ruff
+
+      - name: Run lint
+        run: |
+          if [ -d src ]; then
+            ruff check src tests
+          else
+            echo "No src directory found, skipping lint"
+          fi
+
+      - name: Run tests
+        run: |
+          if [ ! -d tests ]; then
+            echo "tests directory not found"
+            exit 1
+          fi
+
+          set +e
+          pytest_output=$(pytest -q 2>&1)
+          pytest_status=$?
+          set -e
+
+          echo "$pytest_output"
+
+          if echo "$pytest_output" | grep -q "no tests ran"; then
+            echo "No tests were collected. Add at least one test before merge."
+            exit 1
+          fi
+
+          if [ $pytest_status -ne 0 ]; then
+            exit $pytest_status
+          fi
+
+  commit-message:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Validate PR title with commitlint format
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: commitlint.config.cjs
+          failOnWarnings: true
+          helpURL: https://www.conventionalcommits.org/
